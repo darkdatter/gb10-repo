@@ -1,0 +1,11 @@
+# This repo is authored on Windows but runs on Linux (DGX Spark).
+# Force LF for anything executed there — CRLF in a shell script yields
+# "bad interpreter: /usr/bin/env bash^M" on the target box.
+* text=auto eol=lf
+*.sh   text eol=lf
+*.py   text eol=lf
+*.md   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.patch text eol=lf
+*.html text eol=lf

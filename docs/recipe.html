@@ -1,0 +1,533 @@
+<title>Qwen3.8 on DGX Spark</title>
+<style>
+  /* ---- tokens: complete light palette on bare :root ---- */
+  :root{
+    --ground:#FAFBFC;
+    --surface:#F0F3F6;
+    --surface-2:#E7ECF1;
+    --border:#D6DEE6;
+    --ink:#11171C;
+    --muted:#5B6874;
+    --accent:#0B6E75;        /* petrol — instrument dial */
+    --accent-soft:#D8EDEE;
+    --warn:#9A5B06;
+    --warn-soft:#F7ECD9;
+    --good:#1C6B41;
+    --good-soft:#DDEEE4;
+    --code-bg:#11171C;
+    --code-ink:#DDE6ED;
+    --code-dim:#7C8B99;
+    --shadow:0 1px 2px rgba(17,23,28,.05),0 8px 24px -12px rgba(17,23,28,.18);
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#0D1116;
+      --surface:#151B22;
+      --surface-2:#1C242C;
+      --border:#28323C;
+      --ink:#E4EBF1;
+      --muted:#8D9BA8;
+      --accent:#3FB3B8;
+      --accent-soft:#123034;
+      --warn:#D8A24A;
+      --warn-soft:#332818;
+      --good:#54B983;
+      --good-soft:#152C20;
+      --code-bg:#080B0E;
+      --code-ink:#DDE6ED;
+      --code-dim:#6C7B89;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0D1116;
+    --surface:#151B22;
+    --surface-2:#1C242C;
+    --border:#28323C;
+    --ink:#E4EBF1;
+    --muted:#8D9BA8;
+    --accent:#3FB3B8;
+    --accent-soft:#123034;
+    --warn:#D8A24A;
+    --warn-soft:#332818;
+    --good:#54B983;
+    --good-soft:#152C20;
+    --code-bg:#080B0E;
+    --code-ink:#DDE6ED;
+    --code-dim:#6C7B89;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.6);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:var(--ground);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:16px;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:60rem;margin:0 auto;padding:3.5rem 1.5rem 6rem;}
+
+  /* ---- masthead ---- */
+  .eyebrow{
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--accent);margin:0 0 1rem;
+  }
+  h1{
+    font-size:clamp(2rem,5vw,3rem);line-height:1.08;margin:0 0 1rem;
+    letter-spacing:-.025em;font-weight:640;text-wrap:balance;
+  }
+  .standfirst{
+    font-size:1.12rem;color:var(--muted);max-width:60ch;margin:0 0 2rem;
+  }
+
+  /* ---- headline metrics ---- */
+  .metrics{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));
+    gap:1px;background:var(--border);border:1px solid var(--border);
+    border-radius:10px;overflow:hidden;margin:0 0 1rem;
+  }
+  .metric{background:var(--surface);padding:1rem 1.1rem;}
+  .metric .v{
+    font-family:var(--mono);font-size:1.5rem;font-weight:600;
+    letter-spacing:-.02em;font-variant-numeric:tabular-nums;display:block;
+  }
+  .metric .k{
+    font-size:.75rem;color:var(--muted);margin-top:.15rem;display:block;
+    letter-spacing:.01em;
+  }
+  .rig{
+    font-family:var(--mono);font-size:.78rem;color:var(--muted);
+    border-left:2px solid var(--accent);padding-left:.85rem;margin:0 0 3.5rem;
+  }
+
+  /* ---- sections ---- */
+  h2{
+    font-size:1.45rem;letter-spacing:-.015em;margin:3.5rem 0 .5rem;
+    font-weight:640;text-wrap:balance;
+    padding-top:1.5rem;border-top:1px solid var(--border);
+  }
+  h2:first-of-type{border-top:none;padding-top:0}
+  h3{font-size:1.02rem;margin:2rem 0 .4rem;font-weight:640;letter-spacing:-.005em}
+  p{margin:0 0 1rem;max-width:68ch}
+  a{color:var(--accent)}
+  a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
+
+  /* ---- numbered steps: install order is load-bearing ---- */
+  .step{display:grid;grid-template-columns:2.4rem 1fr;gap:0 1rem;margin:2.5rem 0}
+  .step-n{
+    font-family:var(--mono);font-size:.8rem;font-weight:600;
+    color:var(--accent);background:var(--accent-soft);
+    border-radius:6px;height:2rem;display:flex;align-items:center;
+    justify-content:center;font-variant-numeric:tabular-nums;
+  }
+  .step-b{min-width:0}
+  .step-b h2{margin:0 0 .35rem;border-top:none;padding-top:0;font-size:1.25rem}
+  .step-b > p:first-of-type{margin-top:.1rem}
+
+  /* ---- code ---- */
+  pre{
+    background:var(--code-bg);color:var(--code-ink);
+    padding:1rem 1.15rem;border-radius:9px;overflow-x:auto;
+    font-family:var(--mono);font-size:.83rem;line-height:1.6;
+    margin:.9rem 0;border:1px solid var(--border);
+  }
+  pre .c{color:var(--code-dim)}
+  code{
+    font-family:var(--mono);font-size:.87em;
+    background:var(--surface-2);padding:.12em .38em;border-radius:4px;
+  }
+  pre code{background:none;padding:0;font-size:inherit}
+
+  /* ---- callouts ---- */
+  .note{
+    border-radius:9px;padding:.9rem 1.1rem;margin:1.1rem 0;
+    border:1px solid var(--border);background:var(--surface);
+    font-size:.94rem;
+  }
+  .note.trap{background:var(--warn-soft);border-color:color-mix(in srgb,var(--warn) 35%,transparent)}
+  .note.win{background:var(--good-soft);border-color:color-mix(in srgb,var(--good) 35%,transparent)}
+  .note b{display:block;margin-bottom:.2rem;font-size:.79rem;letter-spacing:.06em;
+    text-transform:uppercase;font-family:var(--mono);font-weight:600}
+  .note.trap b{color:var(--warn)}
+  .note.win b{color:var(--good)}
+  .note p{margin:0;max-width:none}
+  .note p + p{margin-top:.6rem}
+
+  /* ---- tables ---- */
+  .scroll{overflow-x:auto;margin:1.1rem 0;border:1px solid var(--border);border-radius:9px}
+  table{border-collapse:collapse;width:100%;font-size:.89rem;min-width:30rem}
+  th,td{padding:.6rem .85rem;text-align:left;border-bottom:1px solid var(--border)}
+  thead th{
+    background:var(--surface);font-size:.73rem;letter-spacing:.07em;
+    text-transform:uppercase;color:var(--muted);font-family:var(--mono);font-weight:600;
+  }
+  tbody tr:last-child td{border-bottom:none}
+  td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+  tr.peak td{background:var(--accent-soft);font-weight:600}
+  .flag{
+    font-family:var(--mono);font-size:.7rem;padding:.1rem .4rem;border-radius:4px;
+    background:var(--surface-2);color:var(--muted);
+  }
+
+  /* ---- gotcha list ---- */
+  .traps{display:grid;gap:.6rem;margin:1.2rem 0}
+  details{
+    border:1px solid var(--border);border-radius:9px;background:var(--surface);
+    padding:.75rem 1rem;
+  }
+  details[open]{background:var(--surface-2)}
+  summary{cursor:pointer;font-weight:600;font-size:.95rem;list-style:none;display:flex;gap:.6rem}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"›";color:var(--accent);font-weight:700;transition:transform .15s}
+  details[open] summary::before{transform:rotate(90deg)}
+  details p{margin:.6rem 0 0;font-size:.92rem;color:var(--muted);max-width:none}
+  details p code{color:var(--ink)}
+
+  footer{
+    margin-top:4rem;padding-top:1.5rem;border-top:1px solid var(--border);
+    font-size:.85rem;color:var(--muted);
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  @media (max-width:34rem){
+    .step{grid-template-columns:1fr;gap:.5rem}
+    .step-n{width:2rem}
+  }
+</style>
+
+<div class="wrap">
+
+  <p class="eyebrow">DGX Spark · GB10 · verified build</p>
+  <h1>Qwen3.8&#8209;27B on DGX Spark</h1>
+  <p class="standfirst">
+    A working recipe for the fastest configuration I could measure on a GB10: SGLang + NVFP4 +
+    DFlash2 speculative decoding, managed by SparkStation. Every number below was measured on one
+    box, and every trap listed is one I actually hit.
+  </p>
+
+  <div class="metrics">
+    <div class="metric"><span class="v">60</span><span class="k">tok/s single stream</span></div>
+    <div class="metric"><span class="v">481</span><span class="k">tok/s at 16 streams</span></div>
+    <div class="metric"><span class="v">190<span style="font-size:.6em">ms</span></span><span class="k">time to first token</span></div>
+    <div class="metric"><span class="v">97.0<span style="font-size:.6em">%</span></span><span class="k">HumanEval pass@1</span></div>
+  </div>
+  <p class="rig">
+    Rig: ASUS DGX Spark · GB10 · 128&nbsp;GB unified · Ubuntu 24.04, kernel 6.17-nvidia ·
+    driver 580.173.02 / CUDA 13.0 · Docker 29.2.1 · nvidia-container-toolkit 1.20 (CDI)
+  </p>
+
+  <div class="note win">
+    <b>Start here if you read nothing else</b>
+    <p>
+      <b style="display:inline;text-transform:none;letter-spacing:0;font-family:inherit">NVFP4 beats FP8, and SGLang beats vLLM, on this hardware.</b>
+      The widely-shared “Qwen3.8-27B FP8 on vLLM at ~32 tok/s” recipe is roughly half the speed of
+      this one. NVIDIA’s own forum benchmarks put NVFP4 29–34% ahead of FP8 on vLLM; moving to
+      SGLang with DFlash2 speculative decoding roughly doubles it again.
+    </p>
+  </div>
+
+  <h2>Ingredients</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Component</th><th>Exact pin</th></tr></thead>
+      <tbody>
+        <tr><td>Target model</td><td><code>RadixArk/Qwen3.8-27B-NVFP4</code> @&nbsp;<code>554ebba9</code></td></tr>
+        <tr><td>Draft model</td><td><code>z-lab/Qwen3.8-27B-DFlash2</code> @&nbsp;<code>50307d4c</code></td></tr>
+        <tr><td>Serving image</td><td><code>lmsysorg/sglang:qwen38-27b-dflash2</code> <span class="flag">built locally</span></td></tr>
+        <tr><td>Launcher toolkit</td><td><a href="https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark">MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark</a></td></tr>
+        <tr><td>Control plane</td><td><a href="https://github.com/kshetrajna12/sparkstation">kshetrajna12/sparkstation</a></td></tr>
+        <tr><td>Disk needed</td><td>~110&nbsp;GB (39&nbsp;GB image + 25&nbsp;GB weights + headroom)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>All four model repos are public — no gated access, no token required to pull them.</p>
+
+  <!-- ---------- STEPS ---------- -->
+
+  <div class="step">
+    <div class="step-n">01</div>
+    <div class="step-b">
+      <h2>Prove GPU passthrough first</h2>
+      <p>Five minutes here saves an hour of misdiagnosis later. DGX OS ships CDI rather than a
+        registered Docker runtime, so <code>docker info</code> shows only <code>runc</code> — that
+        is normal and <code>--gpus all</code> still works.</p>
+<pre><code>docker run --rm --gpus all nvidia/cuda:13.0.1-base-ubuntu24.04 nvidia-smi -L
+<span class="c"># expect: GPU 0: NVIDIA GB10 (UUID: GPU-...)</span></code></pre>
+      <p>If that fails, try <code>--device nvidia.com/gpu=all</code>. Only if <em>both</em> fail:</p>
+<pre><code>sudo nvidia-ctk runtime configure --runtime=docker &amp;&amp; sudo systemctl restart docker</code></pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-n">02</div>
+    <div class="step-b">
+      <h2>Build the DFlash2 image</h2>
+      <p>This is the step most people trip on.</p>
+      <div class="note trap">
+        <b>Trap</b>
+        <p><code>lmsysorg/sglang:qwen38-27b-dflash2</code> <b style="display:inline;text-transform:none;letter-spacing:0;font-family:inherit">is not on Docker Hub.</b>
+        SparkStation’s <code>models.yaml</code> references it, but no released SGLang tag ships
+        DFlash2 — you build it yourself. The base <code>:qwen38-27b</code> tag does exist.</p>
+      </div>
+<pre><code>git clone --depth 1 https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark.git
+cd Qwen3.8-27B-SGLang-DGX-Spark
+./patch/build-dflash2-image.sh --full   <span class="c"># pulls 39GB base, then overlays</span></code></pre>
+      <p><code>--full</code> clones SGLang at a pinned commit and applies an NVFP4 head patch. That
+        patch matters: the earlier approach dequantized the whole NVFP4 <code>lm_head</code> at
+        draft-graph capture and <em>hard-rebooted the machine</em>. Use <code>--minimal</code> for a
+        checksum-verified 5-file overlay that needs no network.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-n">03</div>
+    <div class="step-b">
+      <h2>Pre-download the weights</h2>
+      <p>Do this on the host, not from inside the container — it parallelizes with the image build
+        and sidesteps the launcher’s auth gap (see traps).</p>
+<pre><code>python3 -m venv ~/spark/venv
+~/spark/venv/bin/pip install -U huggingface_hub
+~/spark/venv/bin/hf auth login          <span class="c"># optional: rate limits only</span>
+
+~/spark/venv/bin/hf download RadixArk/Qwen3.8-27B-NVFP4
+~/spark/venv/bin/hf download z-lab/Qwen3.8-27B-DFlash2 \
+  --revision 50307d4c4cde6860d4eee73e2547cd786fe8e8a4</code></pre>
+      <div class="note trap">
+        <b>Trap</b>
+        <p>Let these land in the real <code>~/.cache/huggingface</code>. If you symlink
+        <code>hub/</code> or <code>xet/</code> <em>inside</em> that directory, the container mounts
+        the folder and sees links pointing at host-only paths — it decides nothing is cached,
+        re-downloads, and dies with
+        <code>OSError: I/O error: File exists (os error 17)</code>.</p>
+        <p>Symlink the <em>other</em> direction if you need to: point a repo path at
+        <code>~/.cache/huggingface</code>. Docker resolves <code>-v</code> host-side, so that is safe.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-n">04</div>
+    <div class="step-b">
+      <h2>Run it standalone and benchmark</h2>
+      <p>Get a number before adding a control plane. If something breaks later, you’ll know whether
+        it was the model or the orchestration.</p>
+<pre><code>cd Qwen3.8-27B-SGLang-DGX-Spark   <span class="c"># REQUIRED: start.sh uses WORK_DIR="$(pwd)"</span>
+cp .env.sample .env
+DF_EXTRA="--mem-fraction-static 0.85" ./start-dflash.sh</code></pre>
+      <p>Serves on <strong>:8888</strong> as <code>qwen3.8-27b-sglang</code>, OpenAI- and
+        Anthropic-compatible. First boot ≈3 minutes.</p>
+      <div class="note trap">
+        <b>Memory ceiling</b>
+        <p>The script defaults NVFP4 to <code>0.90</code>; the generic <code>start.sh</code> uses
+        <code>0.95</code>. Both the toolkit and SparkStation record machines
+        <em>unrecoverably wedged</em> during weight load at high fractions — GB10 unified memory
+        starves the OS. I used <strong>0.85</strong> on first boot. If you can’t physically reach
+        the box to power-cycle it, do the same.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-n">05</div>
+    <div class="step-b">
+      <h2>Put SparkStation in front</h2>
+      <p>Gives you one OpenAI endpoint, lifecycle management, auto-suspend, and thermal policy.</p>
+<pre><code>curl -LsSf https://astral.sh/uv/install.sh | sh
+git clone --depth 1 https://github.com/kshetrajna12/sparkstation.git
+cd sparkstation &amp;&amp; uv sync
+cp .env.example .env    <span class="c"># TOTAL_UNIFIED_MEMORY_GB=128, MEMORY_HARD_LIMIT_GB=110</span></code></pre>
+      <p>Then one required edit in <code>models.yaml</code> — the <code>qwen3.8-sglang</code> entry
+        ships pinned to a second machine:</p>
+<pre><code><span class="c"># models.yaml, under qwen3.8-sglang:</span>
+-   host: worker1
++   host: primary</code></pre>
+<pre><code>uv run sparkstation start -d --profile generic
+uv run sparkstation status</code></pre>
+      <p>Gateway on <strong>:8000</strong>, supervisor on :9001. The model container is
+        bridge-networked, so its internal :8000 maps to host <strong>:8001</strong> — no collision
+        with the gateway despite both reporting 8000. Gateway overhead measured at
+        <strong>zero</strong> (62.3 vs 62.5 tok/s direct).</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-n">06</div>
+    <div class="step-b">
+      <h2>Unlock concurrency — the biggest win</h2>
+      <p>The shipped config caps you at 4 concurrent requests and leaves most of the box idle.
+        Three flags are <em>co-limiting</em>; raising only the obvious one measures nothing.</p>
+<pre><code><span class="c"># models.yaml → qwen3.8-sglang → extra_args → sglang_flags</span>
+- "--max-running-requests"      → "16"
+- "--max-mamba-cache-size"      → "80"   <span class="c"># 16 requests x 5 slots</span>
+- "--cuda-graph-max-bs-decode"  → "16"   <span class="c"># else batches >4 fall back to eager</span></code></pre>
+      <div class="note trap">
+        <b>The 5-slot rule</b>
+        <p>Qwen3.8 is a hybrid (Gated DeltaNet) model, so concurrency is bought with
+        <strong>mamba state, not KV cache</strong>. Each request needs <strong>5</strong> GDN state
+        slots — 4 plus one for DFlash2’s verify step. SGLang silently clamps
+        <code>max_running_requests = pool / 5</code> and tells you in the log:
+        <code>capped to 12 by the mamba state cache</code>. Size the pool at 5× your target.</p>
+        <p>It isn’t free: an 80-slot pool allocates <strong>15.6 GB</strong> and drops free GPU
+        memory from 38 → 21 GB.</p>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Streams</th><th class="n">cap = 4</th><th class="n">cap = 12</th><th class="n">cap = 16</th><th class="n">TTFT (cap 16)</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td class="n">58.3</td><td class="n">53.4</td><td class="n">52.9</td><td class="n">0.20 s</td></tr>
+            <tr><td>4</td><td class="n">187.1</td><td class="n">191.5</td><td class="n">193.1</td><td class="n">0.41 s</td></tr>
+            <tr><td>8</td><td class="n">190.1</td><td class="n">296.0</td><td class="n">315.9</td><td class="n">0.37 s</td></tr>
+            <tr class="peak"><td>16</td><td class="n">—</td><td class="n">307.8</td><td class="n">480.7</td><td class="n">0.68 s</td></tr>
+            <tr><td>24</td><td class="n">—</td><td class="n">319.6</td><td class="n">416.5</td><td class="n">9.98 s</td></tr>
+            <tr><td>32</td><td class="n">—</td><td class="n">368.9</td><td class="n">469.8</td><td class="n">11.09 s</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Aggregate tok/s. <strong>16 streams is a true optimum, not a plateau</strong>: TTFT p50 and
+        max are identical there (0.68 s — zero queueing, because streams equal the cap), while 24
+        and 32 are both <em>slower</em> in aggregate and blow latency out past 10 s.</p>
+      <p>The cost is <strong>~5% single-stream</strong> — 63.1 → 60.0 tok/s, from the larger decode
+        CUDA-graph set. Worth it for multi-agent work; revert if this is a single-user box.</p>
+    </div>
+  </div>
+
+  <!-- ---------- RESULTS ---------- -->
+
+  <h2>Measured performance</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Metric</th><th class="n">Result</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Time to first token</td><td class="n">190 ms</td><td>184–193, short prompt</td></tr>
+        <tr><td>Decode, single stream</td><td class="n">60.0 tok/s</td><td>63.1 before concurrency tuning</td></tr>
+        <tr><td>Decode, peak aggregate</td><td class="n">480.7 tok/s</td><td>16 streams</td></tr>
+        <tr><td>Prefill, 2.4K prompt</td><td class="n">1,590 tok/s</td><td>TTFT 1.5 s</td></tr>
+        <tr><td>Prefill, 9.7K prompt</td><td class="n">2,170 tok/s</td><td>TTFT 4.5 s — peak</td></tr>
+        <tr><td>Prefill, 39K prompt</td><td class="n">1,895 tok/s</td><td>TTFT 20.4 s</td></tr>
+        <tr><td>Prefill, 121K prompt</td><td class="n">1,274 tok/s</td><td>TTFT <strong>95 s</strong></td></tr>
+        <tr><td>GPU under full load</td><td class="n">59 °C</td><td>2405 MHz, zero throttle flags</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The 262K context is real, but a ~120K-token prompt costs <strong>95 seconds before the first
+    token</strong>. Fine for batch, painful interactively — check this before pointing a
+    large-codebase agent at it.</p>
+
+  <h2>Measured quality</h2>
+  <p>HumanEval, temperature 0, every candidate actually executed against its real unit tests in a
+    <code>--network none</code> container. Not self-judged.</p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Mode</th><th class="n">pass@1</th><th class="n">Tokens/problem</th><th class="n">Wall (164)</th></tr></thead>
+      <tbody>
+        <tr><td>Thinking off</td><td class="n">93.9%</td><td class="n">~200</td><td class="n">3 min</td></tr>
+        <tr class="peak"><td>Thinking on</td><td class="n">97.0%</td><td class="n">~945</td><td class="n">19 min</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note trap">
+    <b>Don’t misread thinking mode</b>
+    <p>My first thinking-on run scored a <em>worse</em> 90.9% — and it was entirely an artifact:
+      14 of its 15 failures had <code>finish_reason == "length"</code>. The model reasoned past a
+      4,096-token budget and never emitted code.</p>
+    <p>With a 16K budget it reaches 97.0%. Of the 5 remaining failures, only <strong>one</strong> is
+      a genuine wrong answer — the other four burned the full 16K without terminating. That is the
+      overthinking pathology SparkStation’s config explicitly guards against by pinning reasoning
+      effort to <code>medium</code>. <strong>Always pair a token cap with a
+      <code>finish_reason</code> check</strong>, or silent truncation reads as a quality regression.</p>
+  </div>
+  <p>Practical default: <strong>thinking off</strong> for well-specified functions — 93.9% at a
+    fifth of the tokens and 6× the speed. Switch it on for hard cases.</p>
+
+  <!-- ---------- TRAPS ---------- -->
+
+  <h2>Every trap, in one list</h2>
+  <div class="traps">
+    <details>
+      <summary>The DFlash2 image doesn’t exist upstream</summary>
+      <p>SparkStation’s <code>models.yaml</code> names <code>lmsysorg/sglang:qwen38-27b-dflash2</code>,
+      but no released SGLang tag ships DFlash2. Build it with
+      <code>patch/build-dflash2-image.sh</code> before starting anything.</p>
+    </details>
+    <details>
+      <summary>HF cache symlinks inside the container mount break everything</summary>
+      <p>The container mounts <code>~/.cache/huggingface</code>. Symlinks <em>within</em> it point at
+      host paths that don’t exist inside the container, so it re-downloads and fails on xet with
+      <code>File exists (os error 17)</code>. Keep real directories there.</p>
+    </details>
+    <details>
+      <summary><code>host: worker1</code> assumes a second Spark</summary>
+      <p>The shipped <code>qwen3.8-sglang</code> entry is pinned to a worker node. On a single Spark
+      set <code>host: primary</code>. The default <code>generic</code> profile uses the base spec, so
+      nothing overrides it back.</p>
+    </details>
+    <details>
+      <summary><code>start.sh</code> uses <code>WORK_DIR="$(pwd)"</code></summary>
+      <p>Not the script directory. Run it from inside the repo or your HF cache and Triton cache land
+      wherever you happened to be standing.</p>
+    </details>
+    <details>
+      <summary>5 mamba slots per request, not 4</summary>
+      <p>DFlash2’s verify step needs an extra slot. <code>max_running_requests</code> is silently
+      clamped to <code>pool / 5</code>. The log says so explicitly — read it after a config change.</p>
+    </details>
+    <details>
+      <summary>uv installs <code>cli.py</code> into site-packages</summary>
+      <p>Editing <code>cli.py</code> in the repo does <em>nothing</em> — the console script resolves
+      <code>import cli</code> from <code>.venv/bin</code>, not your cwd. Copy the file to
+      <code>.venv/lib/python3.12/site-packages/cli.py</code> too. Related: in the installed copy
+      <code>__file__</code> is site-packages, so use <code>PROJECT_ROOT</code> to find
+      <code>.env</code> / <code>models.yaml</code>.</p>
+    </details>
+    <details>
+      <summary>Gateway reports “not healthy” while working fine</summary>
+      <p><code>_gateway_healthy()</code> hardcodes <code>Bearer dummy-key</code>, so any custom
+      <code>LITELLM_MASTER_KEY</code> returns HTTP 400 and status false-negatives. CLI-only — the
+      supervisor doesn’t use it — but it costs a spurious warning and a 30 s stall on every start.
+      Patch it to read the configured key, or leave the default key alone.</p>
+    </details>
+    <details>
+      <summary>Only the FLUX launcher forwards <code>HF_TOKEN</code></summary>
+      <p><code>sglang_launcher.py</code> and <code>vllm_launcher.py</code> don’t pass it into the
+      container, so a <em>gated</em> model can’t authenticate its own download. Pre-pull on the host
+      with <code>hf download</code> (which is the better workflow anyway).</p>
+    </details>
+    <details>
+      <summary>Never <code>docker rm -f</code> a managed container</summary>
+      <p>The supervisor’s state goes stale and both stop (HTTP 500) and start (HTTP 409) then fail.
+      <code>sparkstation stop &amp;&amp; sparkstation start</code> reconciles it.</p>
+    </details>
+    <details>
+      <summary>Greedy decoding is not bitwise deterministic</summary>
+      <p>At temperature 0, repeated runs still flip 2–3 HumanEval problems, because dynamic batching
+      plus speculative decoding changes reduction order. Don’t read a sub-2% delta as a regression.</p>
+    </details>
+    <details>
+      <summary>Thinking is on by default</summary>
+      <p>A small <code>max_tokens</code> returns empty <code>content</code> with everything in
+      <code>reasoning_content</code>. Disable per request with
+      <code>chat_template_kwargs: {"enable_thinking": false}</code>.</p>
+    </details>
+  </div>
+
+  <h2>Sanity check</h2>
+<pre><code>curl -s http://127.0.0.1:8000/v1/chat/completions \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"default",
+       "messages":[{"role":"user","content":"Say exactly: it works"}],
+       "max_tokens":200,
+       "chat_template_kwargs":{"enable_thinking":false}}'</code></pre>
+
+  <footer>
+    Measured on a single ASUS DGX Spark, August 2026. Throughput figures are LRUCache-style code
+    generation at temperature 0, counting <code>completion_tokens</code> over wall time — DFlash2
+    emits ~3.75 tokens per SSE event, so counting stream events instead will mislead you.
+    Your mileage will vary with prompt shape.
+  </footer>
+
+</div>

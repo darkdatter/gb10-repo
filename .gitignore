@@ -1,0 +1,18 @@
+# benchmark artifacts + datasets (regenerate with scripts/)
+data/
+results/gen_*.json
+results/exec_*.json
+*.log
+
+# local env / secrets — never commit
+.env
+.env.*
+!.env.example
+*.token
+*.key
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/

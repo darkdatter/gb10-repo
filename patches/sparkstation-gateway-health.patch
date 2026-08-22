@@ -1,0 +1,55 @@
+Fix a false-negative gateway health check in SparkStation's CLI.
+
+`_gateway_healthy()` hardcodes `Bearer dummy-key`. LiteLLM rejects a mismatched
+key with HTTP 400, so `sparkstation status` reports
+
+    Gateway: process alive (PID ...) but not healthy
+
+for any deployment that changed LITELLM_MASTER_KEY from the README default --
+even though the gateway is serving requests correctly. It is CLI-only (the
+supervisor does not use this probe), but it also costs a spurious
+"Warning: gateway may not have started" and a 30-second stall on every start.
+
+Note PROJECT_ROOT rather than __file__: cli.py is installed as a top-level
+module into site-packages, where __file__ points at site-packages and .env is
+not there. cli.py's own _find_project_root docstring documents this trap.
+
+Apply from the sparkstation repo root:
+
+    git apply /path/to/sparkstation-gateway-health.patch
+
+Then sync the installed copy, or the console script keeps loading the old one
+(it resolves `import cli` from .venv/bin, not your cwd):
+
+    cp cli.py .venv/lib/python3.12/site-packages/cli.py
+
+--- a/cli.py
++++ b/cli.py
+@@
++def _master_key_from_env_file() -> str:
++    """Read LITELLM_MASTER_KEY from the project .env.
++
++    cli.py does not load dotenv, but LiteLLM itself does, so the CLI probe has
++    to resolve the same key or it false-negatives with HTTP 400.
++    """
++    try:
++        with open(PROJECT_ROOT / ".env") as fh:
++            for line in fh:
++                line = line.strip()
++                if line.startswith("LITELLM_MASTER_KEY="):
++                    return line.split("=", 1)[1].split("#")[0].strip() or "dummy-key"
++    except Exception:
++        pass
++    return "dummy-key"
++
++
+ def _gateway_healthy() -> bool:
+     try:
+-        r = httpx.get(f"{DEFAULT_GATEWAY_URL}/v1/models",
+-                       headers={"Authorization": "Bearer dummy-key"}, timeout=3)
++        key = os.environ.get("LITELLM_MASTER_KEY") or _master_key_from_env_file()
++        r = httpx.get(f"{DEFAULT_GATEWAY_URL}/v1/models",
++                       headers={"Authorization": f"Bearer {key}"}, timeout=3)
+         return r.status_code == 200
+     except Exception:
+         return False
