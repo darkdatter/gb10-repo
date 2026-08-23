@@ -57,7 +57,8 @@ slots per request lands you at 12 instead of 16.
 
 | | pool 20 | pool 80 |
 |---|---:|---:|
-| GDN state allocation | 3.8 GB | **15.6 GB** |
+| GDN state allocation (`--mamba-ssm-dtype bfloat16`) | 3.8 GB | **15.6 GB** |
+| same, flag unset (resolves to `float32`) | 7.6 GB | 30.9 GB |
 | Free GPU memory after load | 38.1 GB | 20.6 GB |
 | Peak aggregate throughput | 190 tok/s | **480.7 tok/s** |
 | Single-stream decode | 63.1 tok/s | 60.0 tok/s |

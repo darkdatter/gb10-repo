@@ -7,8 +7,9 @@ kernel 6.17.0-1031-nvidia, aarch64. Driver 580.173.02, CUDA 13.0.
 Docker 29.2.1, nvidia-container-toolkit 1.20 via CDI.
 
 **Serving.** SGLang + `RadixArk/Qwen3.8-27B-NVFP4` + `z-lab/Qwen3.8-27B-DFlash2`
-(16 draft tokens), `--kv-cache-dtype fp8_e4m3`, 262144 context,
-`--mem-fraction-static 0.85`, CPU pinned to `5-9,15-19` (the Cortex-X5 cores).
+(16 draft tokens), `--kv-cache-dtype fp8_e4m3`, `--mamba-ssm-dtype bfloat16`,
+262144 context, `--mem-fraction-static 0.85`, CPU pinned to `5-9,15-19`
+(the Cortex-X5 cores).
 
 Throughput is code generation (LRUCache prompt) at temperature 0, counting
 `completion_tokens` over wall time.
@@ -184,7 +185,9 @@ appears to cover only part of the SoC. Don't use it for power budgeting.
 | 80 | 15.6 GB | 20.6 GB | **480.7 tok/s** |
 
 At 80 slots: `ssm_state` 5.70 GB + `intermediate_ssm_state_cache` 9.56 GB +
-conv caches 0.38 GB. On this hybrid architecture concurrency is bought with
+conv caches 0.38 GB — these hold only with `--mamba-ssm-dtype bfloat16`. Left
+unset the SSM state resolves to `float32`, which doubles this to 30.9 GB and
+leaves ~12 GB free. On this hybrid architecture concurrency is bought with
 mamba state, not KV cache — worth remembering when sizing a second model
 alongside it.
 
