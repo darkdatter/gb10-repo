@@ -117,6 +117,9 @@ co-limiting** — raising only the obvious one measures nothing.
 there (0.68 s, zero queueing), while 24 and 32 are *slower* in aggregate with
 worst-case TTFT past 10 s.
 
+Leave `--max-total-tokens 1048576` in place: uncapping it grows the KV pool but
+nothing uses the space, and the lost headroom cost 18% at 32 streams.
+
 Costs ~5% single-stream and 11.8 GB of GDN state. Details in
 [`patches/sparkstation-models.yaml.md`](patches/sparkstation-models.yaml.md).
 
@@ -144,6 +147,12 @@ tokens. Switch it on for hard cases.
 
 Each of these cost real time.
 
+- **SparkStation restarts healthy models under load.** `HEALTH_CHECK_TIMEOUT_SECONDS=5`
+  x 3 failures: a model saturated on long prefill cannot answer a 5s probe, so the
+  supervisor kills it mid-job and clients get 503s. Raise it to 30.
+- **mem-fraction is not a perf lever here.** 0.82 / 0.85 / 0.90 all measure the
+  same. Concurrency is bound by mamba slots, long context by prefill — never by
+  memory capacity.
 - **The DFlash2 image doesn't exist upstream.** Build it; see step 2.
 - **HF cache symlinks inside the container mount break everything.** The
   container bind-mounts `~/.cache/huggingface`; symlinks *within* it point at
@@ -177,7 +186,7 @@ Each of these cost real time.
 ## Layout
 
 ```
-bench/     common.py · perf.py · humaneval/{generate,execute,report}.py
+bench/     common.py · perf.py · longctx.py · humaneval/{generate,execute,report}.py
 scripts/   00-verify-gpu · 01-build-and-fetch · run-humaneval
 patches/   models.yaml edits · gateway-health fix
 results/   RESULTS.md — all measurements

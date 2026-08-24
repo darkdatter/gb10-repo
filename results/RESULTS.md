@@ -8,7 +8,7 @@ Docker 29.2.1, nvidia-container-toolkit 1.20 via CDI.
 
 **Serving.** SGLang + `RadixArk/Qwen3.8-27B-NVFP4` + `z-lab/Qwen3.8-27B-DFlash2`
 (8 draft tokens), `--kv-cache-dtype fp8_e4m3`, 262144 context,
-`--mem-fraction-static 0.82`, CPU pinned to `5-9,15-19` (the Cortex-X5 cores).
+`--mem-fraction-static 0.85`, CPU pinned to `5-9,15-19` (the Cortex-X5 cores).
 
 Throughput is code generation (LRUCache prompt) at temperature 0, counting
 `completion_tokens` over wall time.
@@ -55,6 +55,43 @@ worst-case TTFT past 10 s.
 Prefill peaks near 10K tokens then degrades. The 262K context is real, but a
 ~120K prompt costs ~95 s before the first token.
 
+
+## Long-context concurrency
+
+Unique content per stream (`cached_tokens == 0`), so this is real KV demand.
+
+| Streams @ 83K | Unique KV | Wall | TTFT max |
+|---:|---:|---:|---:|
+| 4 | 332,710 | 277.4 s | 277.1 s |
+| 8 | 665,932 | 555.8 s | 555.4 s |
+| 12 | 998,767 | 832.8 s | 832.2 s |
+
+**69.4 s per stream, dead linear.** Prefill fully serialises — `#new-seq: 1` per
+batch at ~1,000 tok/s — so concurrency does not help long-context work; it just
+makes everyone wait proportionally longer. Decode throughput is the wrong
+predictor for agent workloads over large inputs.
+
+A 16-stream run did not fail on memory: the model was too busy to answer a 5 s
+health probe, so the supervisor restarted it (see Traps in the README).
+
+**Test design matters here.** Build every prompt from shared filler and the
+radix cache deduplicates them — the first version of this test measured cache
+hits, not capacity. Assert `cached_tokens == 0`.
+
+## mem-fraction
+
+| Config | Single-stream | 16 streams | 32 streams | Free GPU |
+|---|---:|---:|---:|---:|
+| 0.82 + 1M cap | 60.0 | **480.7** | 469.8 | 20.6 GB |
+| 0.90 + 1M cap | 62.3 | 468.7 | 468.7 | 25.3 GB |
+| 0.90, pool uncapped | 52.3 | 468.7 | 384.7 | 8.1 GB |
+| **0.85 + 1M cap** | 61.8 | 472.0 | **477.0** | **26.1 GB** |
+
+**Not a performance lever.** A 10-point spread moves throughput by less than
+run-to-run noise. Uncapping the pool grows it 1,048,576 → 1,496,047 tokens, but
+nothing uses the space (peak observed usage 67%) and the lost headroom cost 18%
+at 32 streams. 0.85 with the cap kept is the settled default: baseline
+throughput, most free memory.
 ## Quality — HumanEval
 
 164 problems, temperature 0, each executed against its real unit tests in a
@@ -89,13 +126,14 @@ At 96% GPU utilisation, sustained:
 
 | | |
 |---|---:|
-| GPU temperature | 59 °C (idle 36 °C) |
+| GPU temperature, decode | 59 °C (idle 36 °C) |
+| GPU temperature, sustained prefill | 74 °C |
 | SM clock | 2405 MHz |
 | Throttle reasons active | `0x0` — none |
 | ACPI thermal zones | 59–70 °C |
 
-Full load costs ~23 °C over idle with clocks pinned at maximum and no
-throttling. SparkStation suspends at 80 °C, so ~21 °C of headroom.
+Prefill, not decode, is the thermally interesting workload: 74 °C leaves 6 °C of
+margin to the 80 °C suspend threshold, against 21 °C on decode-heavy work.
 
 Reported ~32 W board power under load is implausibly low for GB10 — that rail
 appears to cover only part of the SoC. Don't use it for power budgeting.

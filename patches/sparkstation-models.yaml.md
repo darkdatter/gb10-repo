@@ -74,3 +74,25 @@ uses `0.95`.
 
 Use `0.85` on a first boot, especially if you can't physically reach the box to
 power-cycle it.
+
+## Health check
+
+`.env` ships `HEALTH_CHECK_TIMEOUT_SECONDS=5` with `HEALTH_CHECK_MAX_FAILURES=3`.
+A model saturated on long prefill cannot answer a 5-second probe, so the
+supervisor marks it failed and restarts it mid-job — in-flight requests return
+503. Observed with 16 concurrent 83K-token requests; the container showed
+`OOMKilled=false`, `exit=0`, so it was not a crash.
+
+```diff
+-HEALTH_CHECK_TIMEOUT_SECONDS=5
++HEALTH_CHECK_TIMEOUT_SECONDS=30
+```
+
+Same 3-failure threshold still catches a genuinely dead server.
+
+## On mem-fraction
+
+`mem_fraction_static: 0.85` is a headroom choice, not a performance one —
+0.82 / 0.85 / 0.90 all measure the same. Keep `--max-total-tokens 1048576`:
+uncapping the pool grows it but nothing uses the space, and the lost headroom
+cost 18% at 32 streams.
