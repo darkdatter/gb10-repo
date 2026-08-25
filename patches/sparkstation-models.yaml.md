@@ -96,3 +96,25 @@ Same 3-failure threshold still catches a genuinely dead server.
 0.82 / 0.85 / 0.90 all measure the same. Keep `--max-total-tokens 1048576`:
 uncapping the pool grows it but nothing uses the space, and the lost headroom
 cost 18% at 32 streams.
+
+## Draft tokens
+
+The largest single-stream lever measured on this box: **+28%**.
+
+```diff
+         - "--speculative-num-draft-tokens"
+-        - "8"
++        - "16"
+```
+
+The optima diverge — pick by workload:
+
+| | draft | single | agg @16 |
+|---|---:|---:|---:|
+| interactive | 16 | **78.6** | 384.8 |
+| concurrent serving | 10 | 65.2 | **435.1** |
+| shipped default | 8 | 61.3 | 429.2 |
+
+Past 16 it reverses: `accept_len` falls at 20 and 24 despite drafting more, so
+the extra compute produces rejected tokens. Full curve in
+[`../results/RESULTS.md`](../results/RESULTS.md).

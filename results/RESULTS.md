@@ -7,7 +7,7 @@ kernel 6.17.0-1031-nvidia, aarch64. Driver 580.173.02, CUDA 13.0.
 Docker 29.2.1, nvidia-container-toolkit 1.20 via CDI.
 
 **Serving.** SGLang + `RadixArk/Qwen3.8-27B-NVFP4` + `z-lab/Qwen3.8-27B-DFlash2`
-(8 draft tokens), `--kv-cache-dtype fp8_e4m3`, 262144 context,
+(16 draft tokens), `--kv-cache-dtype fp8_e4m3`, 262144 context,
 `--mem-fraction-static 0.85`, CPU pinned to `5-9,15-19` (the Cortex-X5 cores).
 
 Throughput is code generation (LRUCache prompt) at temperature 0, counting
@@ -18,7 +18,8 @@ Throughput is code generation (LRUCache prompt) at temperature 0, counting
 | Metric | Result |
 |---|---:|
 | Time to first token | 190 ms (184–193, n=5) |
-| Decode, thinking off | 60.0 tok/s (n=5; 59.9–60.1) |
+| Decode, thinking off, draft=16 | **78.6 tok/s** (n=5; 77.0–78.9) |
+| Decode, thinking off, draft=8 | 61.3 tok/s |
 | Decode, before concurrency tuning | 63.1 tok/s |
 | Decode, thinking on | 46.7 tok/s |
 | Prose decode | 26.0 tok/s |
@@ -55,6 +56,38 @@ worst-case TTFT past 10 s.
 Prefill peaks near 10K tokens then degrades. The 262K context is real, but a
 ~120K prompt costs ~95 s before the first token.
 
+## Draft tokens
+
+`--speculative-num-draft-tokens`, all values on the same build. `accept_len` is
+mean accepted tokens per step; `accept_rate` the fraction of drafted tokens kept.
+
+| draft | single | agg @16 | accept_len | accept_rate |
+|---:|---:|---:|---:|---:|
+| 6 | 49.5 | 404.2 | 5.25 | 0.85 |
+| 7 | 55.7 | 386.6 | 5.89 | 0.82 |
+| 8 (default) | 61.3 | 429.2 | 6.63 | 0.80 |
+| 10 | 65.2 | **435.1** | 7.18 | 0.69 |
+| 12 | 75.1 | 402.8 | 8.27 | 0.66 |
+| 14 | 78.8 | 386.5 | 8.87 | 0.61 |
+| 16 | **78.6** | 384.8 | 9.52 | 0.57 |
+| 20 | 72.0 | 330.7 | 8.48 | 0.40 |
+| 24 | 69.0 | 284.5 | 8.40 | 0.32 |
+
+**+28% single-stream** from the default. The optima diverge: 16 for interactive,
+**10 for concurrent serving**.
+
+`accept_len` rises to 9.52 at draft=16 then falls at 20 and 24 — past 16 the
+drafter cannot sustain longer correct runs, so the extra draft compute buys
+rejected tokens. Under 16-stream saturation that wasted compute competes with
+real work, which is why aggregate peaks much earlier.
+
+The in-sweep figure at draft=16 was 85.7; a fresh boot re-measured 78.6. The
+lower number is published because it reproduced. That gap is the boot-to-boot
+variance noted below, and it means 12 / 14 / 16 are not distinguishable from
+each other — only the broad shape is trustworthy.
+
+Sweep values contradict the "block-7 peak" reported elsewhere for this stack;
+that figure was measured on DSpark, not DFlash2.
 
 ## Long-context concurrency
 
@@ -92,6 +125,7 @@ run-to-run noise. Uncapping the pool grows it 1,048,576 → 1,496,047 tokens, bu
 nothing uses the space (peak observed usage 67%) and the lost headroom cost 18%
 at 32 streams. 0.85 with the cap kept is the settled default: baseline
 throughput, most free memory.
+
 ## Quality — HumanEval
 
 164 problems, temperature 0, each executed against its real unit tests in a
@@ -108,11 +142,14 @@ Of the 5 remaining thinking-mode failures, **only one is a wrong answer**
 (HumanEval/115). The other four burned a full 16,384-token budget without
 emitting code. Excluding runaways: 99.4% (159/160).
 
-**Three measurement traps**, all hit here:
+**Four measurement traps**, all hit here:
 
 - **Truncation reads as a quality regression.** A first thinking run at a 4,096
   cap scored 90.9%; 14 of its 15 failures had `finish_reason == "length"`.
   Always check it before quoting a thinking-mode score.
+- **Boot-to-boot variance is ~8% on single-stream**, against <2% run-to-run
+  within one instance. Several small deltas in this document sit inside that
+  band; treat only large moves as signal.
 - **Greedy is not bitwise deterministic.** Temperature 0 still flips 2–3
   problems between runs, because dynamic batching plus speculative decoding
   changes reduction order. Treat pass@1 as ±2 problems.
@@ -158,7 +195,7 @@ alongside it.
 | FP8 + vLLM | ~32 tok/s | widely-shared Reddit recipe |
 | NVFP4 + vLLM | +29–34% over FP8 | NVIDIA developer forums |
 | NVFP4 + SGLang + DFlash2 | 50–51 tok/s | MiaAI-Lab, hasso5703 |
-| **This build** | **60.0 single / 480.7 aggregate** | measured here |
+| **This build** | **78.6 single / 480.7 aggregate** | measured here |
 
 Prompt shapes differ across sources, so absolute comparison is approximate. The
 FP8-vs-NVFP4 and vLLM-vs-SGLang ordering is the durable part.

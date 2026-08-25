@@ -6,7 +6,11 @@ A measured recipe for the fastest Qwen3.8-27B setup I could get on a DGX Spark:
 
 | Single-stream | Peak aggregate | TTFT | HumanEval pass@1 |
 |---:|---:|---:|---:|
-| **60.0 tok/s** | **480.7 tok/s** (16 streams) | **190 ms** | **97.0%** |
+| **78.6 tok/s** | **480.7 tok/s** (16 streams) | **190 ms** | **97.0%** |
+
+Those two throughput figures come from different settings: single-stream is at
+`--speculative-num-draft-tokens 16`, peak aggregate at 8. The optima diverge —
+see step 6.
 
 **NVFP4 beats FP8, and SGLang beats vLLM, on this hardware.** The widely-shared
 "FP8 on vLLM at ~32 tok/s" recipe is roughly half this speed.
@@ -123,7 +127,29 @@ nothing uses the space, and the lost headroom cost 18% at 32 streams.
 Costs ~5% single-stream and 11.8 GB of GDN state. Details in
 [`patches/sparkstation-models.yaml.md`](patches/sparkstation-models.yaml.md).
 
-## 6. Benchmark quality
+## 6. Tune draft tokens — the largest single-stream lever
+
+`--speculative-num-draft-tokens` ships at 8. The measured optimum is ~16,
+worth **+28%** single-stream.
+
+| draft | single | agg @16 | accept_len | accept_rate |
+|---:|---:|---:|---:|---:|
+| 6 | 49.5 | 404.2 | 5.25 | 0.85 |
+| 8 (default) | 61.3 | 429.2 | 6.63 | 0.80 |
+| 10 | 65.2 | **435.1** | 7.18 | 0.69 |
+| 12 | 75.1 | 402.8 | 8.27 | 0.66 |
+| 16 | **78.6** | 384.8 | 9.52 | 0.57 |
+| 20 | 72.0 | 330.7 | 8.48 | 0.40 |
+| 24 | 69.0 | 284.5 | 8.40 | 0.32 |
+
+**The optima diverge — pick one:** 16 for interactive/single-stream, **10 for
+concurrent serving** (435 vs 385 aggregate). You cannot have both.
+
+Past 16, `accept_len` *falls* even though more tokens are drafted — the drafter
+can't sustain longer correct runs, so you pay draft compute for tokens that get
+rejected. `accept_rate` collapses from 0.80 to 0.32.
+
+## 7. Benchmark quality
 
 ```bash
 ./scripts/run-humaneval.sh          # thinking off, ~5 min
@@ -174,6 +200,9 @@ Each of these cost real time.
   authenticate its own download; pre-pull on the host.
 - **Never `docker rm -f` a managed container.** The supervisor's state goes
   stale; `sparkstation stop && start` reconciles.
+- **Boot-to-boot variance is ~8% on single-stream**, against <2% run-to-run
+  within one server instance. Size A/B deltas against 8%, and re-measure on a
+  fresh boot before believing a small win.
 - **Greedy is not bitwise deterministic.** Temperature 0 still flips 2–3
   HumanEval problems between runs. Don't read a sub-2% delta as a regression.
 - **Thinking is on by default**, and a small `max_tokens` returns empty
