@@ -6,10 +6,15 @@ One ASUS DGX Spark, August 2026, box otherwise idle for every figure.
 kernel 6.17.0-1031-nvidia, aarch64. Driver 580.173.02, CUDA 13.0.
 Docker 29.2.1, nvidia-container-toolkit 1.20 via CDI.
 
-**Serving.** SGLang + `RadixArk/Qwen3.8-27B-NVFP4` + `z-lab/Qwen3.8-27B-DFlash2`
-(16 draft tokens), `--kv-cache-dtype fp8_e4m3`, `--mamba-ssm-dtype bfloat16`,
-262144 context, `--mem-fraction-static 0.85`, CPU pinned to `5-9,15-19`
-(the Cortex-X5 cores).
+**Serving.** SGLang + `RadixArk/Qwen3.8-27B-NVFP4` + `z-lab/Qwen3.8-27B-DFlash2`,
+`--kv-cache-dtype fp8_e4m3`, `--mamba-ssm-dtype bfloat16`, 262144 context,
+`--mem-fraction-static 0.85`, CPU pinned to `5-9,15-19` (the Cortex-X5 cores).
+
+**Draft tokens differ by section.** Everything below was measured at
+`--speculative-num-draft-tokens 8` — TTFT, thinking-on, prose, concurrency,
+prefill, long context and HumanEval — **except** the draft=16 rows, which are
+labelled as such. The two settings are not interchangeable: draft=16 is +28% on
+single-stream and −10% on aggregate, so mixing them in one figure is misleading.
 
 Throughput is code generation (LRUCache prompt) at temperature 0, counting
 `completion_tokens` over wall time.
@@ -41,9 +46,13 @@ Aggregate tok/s at each `max_running_requests` cap.
 | 32 | — | 368.9 | 469.8 | 5.23 s | 11.09 s |
 
 At the shipped cap of 4, going 4 → 8 gains 2% — that flatline is config, not
-hardware. At cap 16, TTFT p50 and max are identical at 16 streams (zero
-queueing, streams equal the cap); 24 and 32 are *slower* in aggregate with
-worst-case TTFT past 10 s.
+hardware.
+
+**The peak tracks the cap, it is not a hardware limit.** At cap 12 the peak sits
+at 32 streams; at cap 16 it moves to 16. TTFT p50 and max are identical at the
+cap because nothing queues there, and the 24/32 rows are queueing against it —
+not the GPU running out. Raising `max-mamba-cache-size` moves the peak again
+(pool 160 → 474.0 at 32 streams). See [REPRODUCTION.md](REPRODUCTION.md).
 
 ## Prefill / long context
 
@@ -82,10 +91,19 @@ drafter cannot sustain longer correct runs, so the extra draft compute buys
 rejected tokens. Under 16-stream saturation that wasted compute competes with
 real work, which is why aggregate peaks much earlier.
 
-The in-sweep figure at draft=16 was 85.7; a fresh boot re-measured 78.6. The
-lower number is published because it reproduced. That gap is the boot-to-boot
-variance noted below, and it means 12 / 14 / 16 are not distinguishable from
-each other — only the broad shape is trustworthy.
+draft=16 has now been measured three times: **85.7** in-sweep here, **78.6** on a
+fresh boot here, **84.4** on a [second machine](REPRODUCTION.md). The table
+publishes 78.6 because that was the fresh-boot re-measurement, but two of the
+three cluster at 84–86, so **78.6 is probably the low end of the spread rather
+than the centre** and the true figure is likely nearer +40% than +28%.
+
+That spread is also why 12 / 14 / 16 are not distinguishable from each other —
+only the broad shape is trustworthy.
+
+Quality is unaffected: the second machine measured HumanEval at both settings and
+found ±2 problems, inside the documented nondeterminism band. Expected, since
+every draft token is verified against the target model — a wider window changes
+throughput, not output.
 
 Sweep values contradict the "block-7 peak" reported elsewhere for this stack;
 that figure was measured on DSpark, not DFlash2.
@@ -198,7 +216,8 @@ alongside it.
 | FP8 + vLLM | ~32 tok/s | widely-shared Reddit recipe |
 | NVFP4 + vLLM | +29–34% over FP8 | NVIDIA developer forums |
 | NVFP4 + SGLang + DFlash2 | 50–51 tok/s | MiaAI-Lab, hasso5703 |
-| **This build** | **78.6 single / 480.7 aggregate** | measured here |
+| **This build**, draft=8 | 61.3 single / **480.7** aggregate | measured here |
+| **This build**, draft=16 | **78.6** single / 384.8 aggregate | measured here |
 
 Prompt shapes differ across sources, so absolute comparison is approximate. The
 FP8-vs-NVFP4 and vLLM-vs-SGLang ordering is the durable part.

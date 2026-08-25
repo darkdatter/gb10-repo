@@ -64,3 +64,31 @@ The base `lmsysorg/sglang:qwen38-27b` image cannot serve this: no
 `CandidateSelector`, `DFlash2DraftModel` unregistered, and its draft sampler
 multiplies against the packed NVFP4 `lm_head`. It falls back to an eager draft
 head and reaches 29.7 tok/s single-stream, 218.6 aggregate.
+
+## Pool figures: not reproduced here
+
+The 606.4 / 640.9 figures above are from the second Spark. Our validation on the
+original box, 2026-08-25:
+
+| Config | 16 streams | 32 streams | 48 streams |
+|---|---:|---:|---:|
+| pool 80, cap 16 | 383.5 | 362.7 | 363.8 |
+| pool 160, cap 32 | 381.9 | **474.0** | 447.1 |
+| pool 240, cap 48 | — | — | **failed to boot** |
+
+**The direction reproduces** — pool 160 is +31% over pool 80 at 32 streams — but
+the magnitude does not: 474.0 against 606.4.
+
+Two differences account for most of it. Our run was at `--speculative-num-draft-tokens 16`,
+which independently costs ~15% aggregate (384.8 vs 429.2 at 16 streams), so it is
+not a like-for-like comparison. And we could only fit 500K KV tokens at pool 160
+where the reproduction had 1.07M, so the two runs were not under equal memory
+pressure.
+
+**Pool 240 was not chased.** It needs ~47 GB of GDN state. On 128 GB that means
+either raising `mem-fraction-static` to 0.90+, which we measured as harmful
+(−18% at 32 streams, 8 GB headroom, and it preceded a false-positive health-check
+restart), or cutting KV below 200K — which is what we tried, and the server never
+reached "Uvicorn running" inside 17 minutes. There is no version of that test we
+would run on a configuration we would also recommend, so the figure stands as
+reported by the second box and unverified here.

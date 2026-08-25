@@ -11,7 +11,8 @@ WORKDIR="${GB10_WORKDIR:-$HOME/spark}"
 TOOLKIT="$WORKDIR/Qwen3.8-27B-SGLang-DGX-Spark"
 HF_HUB="${HF_HOME:-$HOME/.cache/huggingface}/hub"
 BASE_IMAGE=lmsysorg/sglang:qwen38-27b
-BUILT_IMAGE=lmsysorg/sglang:qwen38-27b-dflash2
+BUILT_IMAGE="${IMAGE:-lmsysorg/sglang:dev-cu13-qwen38-27b-dflash2}"
+LOCAL_IMAGE=lmsysorg/sglang:qwen38-27b-dflash2
 
 snap() {  # resolved snapshot(s) for a cached repo
   local d="$HF_HUB/models--${1//\//--}/snapshots"
@@ -32,7 +33,9 @@ Generated $(date -u +%Y-%m-%dT%H:%M:%SZ) on \`$(hostname)\`.
 | SGLang commit (overlay) | \`$(grep -oE 'full_sha=[0-9a-f]+' "$TOOLKIT/patch/build-dflash2-image.sh" 2>/dev/null | cut -d= -f2 || echo "(unknown)")\` |
 | NVFP4 head patch sha256 | \`$(sha256sum "$TOOLKIT/patch/dflash2_nvfp4_head.patch" 2>/dev/null | cut -d' ' -f1 || echo "(absent)")\` |
 | Base image digest | \`$(img "$BASE_IMAGE" '{{index .RepoDigests 0}}')\` |
-| Built image id | \`$(img "$BUILT_IMAGE" '{{.Id}}')\` |
+| Image | \`$BUILT_IMAGE\` |
+| Image id | \`$(img "$BUILT_IMAGE" '{{.Id}}')\` |
+| Locally built image id (if used) | \`$(img "$LOCAL_IMAGE" '{{.Id}}')\` |
 
 ## Host
 

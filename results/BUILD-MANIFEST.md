@@ -20,7 +20,7 @@ any amount of re-benchmarking.
 | NVFP4 head patch sha256 | `5bdce963c535ac46db6ef968ffa0332d1f9439f1ea6ddc9020421dbfec244071` |
 | Base image | `lmsysorg/sglang:qwen38-27b` |
 | Base image digest | `sha256:febfb971c7352570fc445c466ebd6ffc9d896024958e544a60f2137fd85856b1` |
-| Built image | `lmsysorg/sglang:qwen38-27b-dflash2` |
+| Built image | `lmsysorg/sglang:qwen38-27b-dflash2` (locally built — see note) |
 | Built image id | `sha256:c41f8da7497ed198fe5edb738ca684bd11be40ec48678f9371ea3964ff423298` |
 
 ## Host
@@ -47,3 +47,14 @@ different image than the one benchmarked here, and nothing in the build will
 warn you.
 
 Regenerate this table with [`scripts/build-manifest.sh`](../scripts/build-manifest.sh).
+
+## Image note
+
+These numbers were produced with the **locally built** `qwen38-27b-dflash2`,
+before LMSYS published official DFlash2 images on 2026-08-22. New installs pull
+`dev-cu13-qwen38-27b-dflash2` instead and need no `lm_head` patch; the local
+build is still reachable with `BUILD_LOCAL=1`.
+
+The two have not been benchmarked head to head here. An
+[independent run](REPRODUCTION.md) used the official image and landed within ~1%
+on every headline figure, which is evidence they are equivalent but not proof.

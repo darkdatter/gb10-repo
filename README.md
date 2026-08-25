@@ -47,8 +47,7 @@ DGX OS ships CDI, not a registered Docker runtime — `docker info` showing only
 ## 2. Pull the image, fetch the weights
 
 ```bash
-docker pull lmsysorg/sglang:dev-cu13-qwen38-27b-dflash2
-./scripts/01-build-and-fetch.sh    # weights; the build is now optional
+./scripts/01-build-and-fetch.sh     # pulls the official image + weights
 ```
 
 LMSYS published official DFlash2 images on 2026-08-22: `dev-cu13-qwen38-27b-dflash2`,
@@ -62,10 +61,14 @@ Get a number before adding orchestration.
 ```bash
 cd ~/spark/Qwen3.8-27B-SGLang-DGX-Spark   # required: start.sh uses WORK_DIR="$(pwd)"
 cp -n .env.sample .env
-DF_EXTRA="--mem-fraction-static 0.85" ./start-dflash.sh
+IMAGE=lmsysorg/sglang:dev-cu13-qwen38-27b-dflash2 \
+  DF_EXTRA="--mem-fraction-static 0.85" ./start-dflash.sh
 ```
 
 Serves on **:8888**, OpenAI- and Anthropic-compatible. First boot ≈3 min.
+
+`IMAGE=` is required: `start-dflash.sh` defaults to the locally built tag and
+will build it if absent, which is exactly what step 2 avoids.
 
 **Use 0.85 on a first boot.** The toolkit defaults NVFP4 to `0.90` and generic
 `start.sh` to `0.95`; both this project and the toolkit record machines
@@ -121,9 +124,17 @@ co-limiting** — raising only the obvious one measures nothing.
 
 16 is the cap, not a hardware optimum. SGLang clamps
 `max_running_requests = max_mamba_cache_size / 5`, so the peak lands wherever the
-pool allows and the 24/32 rows are queueing against it. Pool 160 gives 606.4 tok/s
-at 32 streams, pool 240 gives 640.9 at 48 — but aggregate is bought with KV, so
-those are short-prompt figures.
+pool allows and the 24/32 rows are queueing against it.
+
+A larger pool does raise aggregate — we measured **474.0 tok/s at 32 streams**
+with pool 160, against 362.7 at pool 80. [An independent run](results/REPRODUCTION.md)
+reports higher still (606.4 at pool 160, 640.9 at pool 240 with cap 48); we did
+not reproduce those magnitudes, see that file for why.
+
+Aggregate is bought with KV, so these are short-prompt figures. Pool 240 needs
+~47 GB of GDN state, which on 128 GB means either a mem-fraction we measured as
+harmful or a KV pool too small to be useful — it failed to boot here. Treat
+pool 160 as the practical ceiling.
 
 Leave `--max-total-tokens 1048576` in place: uncapping it grows the KV pool but
 nothing uses the space, and the lost headroom cost 18% at 32 streams.
@@ -134,7 +145,8 @@ Costs ~5% single-stream and 11.8 GB of GDN state. Details in
 ## 6. Tune draft tokens — the largest single-stream lever
 
 `--speculative-num-draft-tokens` ships at 8. The measured optimum is ~16,
-worth **+28%** single-stream.
+worth **+28%** single-stream. A second machine measured +41.6%; our 78.6 is
+probably the low end of the spread. See [RESULTS](results/RESULTS.md#draft-tokens).
 
 | draft | single | agg @16 | accept_len | accept_rate |
 |---:|---:|---:|---:|---:|
