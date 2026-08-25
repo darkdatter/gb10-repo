@@ -16,7 +16,9 @@ see step 6.
 "FP8 on vLLM at ~32 tok/s" recipe is roughly half this speed.
 
 Reproduce with [`bench/`](bench/). Full data in
-[`results/RESULTS.md`](results/RESULTS.md).
+[`results/RESULTS.md`](results/RESULTS.md). The exact
+build inputs behind those numbers are in
+[`results/BUILD-MANIFEST.md`](results/BUILD-MANIFEST.md).
 
 ## Ingredients
 
@@ -25,7 +27,7 @@ Reproduce with [`bench/`](bench/). Full data in
 | Target | `RadixArk/Qwen3.8-27B-NVFP4` @ `554ebba9` |
 | Draft | `z-lab/Qwen3.8-27B-DFlash2` @ `50307d4c` |
 | Image | `lmsysorg/sglang:qwen38-27b-dflash2` — **built locally (step 2)** |
-| Toolkit | [MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) |
+| Toolkit | [MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) @ `c90d8c34` |
 | Disk | ~110 GB |
 
 All model repos are public; no token needed. Verified on Ubuntu 24.04,
@@ -173,6 +175,18 @@ tokens. Switch it on for hard cases.
 
 Each of these cost real time.
 
+- **Pin the target revision, not just the draft.** `hf download` without
+  `--revision` takes the repo's mutable default, and SGLang needs `--revision`
+  separately — downloading the right checkpoint does not make the server load
+  it. SparkStation's `models.yaml` already carries it; the standalone path does
+  not.
+- **Fully-offline first start still touches the network.** SGLang's early
+  speculative-algorithm probe resolves the draft config without a revision, so a
+  cache holding only the pinned snapshot can still reach for that repo's default
+  ref. Prime the cache while online.
+- **A working CDI fallback is not automatically usable.** If `--gpus all` fails
+  and `--device nvidia.com/gpu=all` works, neither launcher picks that up — both
+  hardcode `--gpus all`. You have to edit them.
 - **SparkStation restarts healthy models under load.** `HEALTH_CHECK_TIMEOUT_SECONDS=5`
   x 3 failures: a model saturated on long prefill cannot answer a 5s probe, so the
   supervisor kills it mid-job and clients get 503s. Raise it to 30.
@@ -216,9 +230,10 @@ Each of these cost real time.
 
 ```
 bench/     common.py · perf.py · longctx.py · humaneval/{generate,execute,report}.py
-scripts/   00-verify-gpu · 01-build-and-fetch · run-humaneval
+scripts/   00-verify-gpu · 01-build-and-fetch · build-manifest · run-humaneval
 patches/   models.yaml edits · gateway-health fix
 results/   RESULTS.md — all measurements
+           BUILD-MANIFEST.md — resolved build inputs for those numbers
 ```
 
 Scripts read `GB10_BASE_URL`, `GB10_API_KEY`, `GB10_MODEL` from the environment

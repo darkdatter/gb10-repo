@@ -13,8 +13,11 @@ set -euo pipefail
 WORKDIR="${GB10_WORKDIR:-$HOME/spark}"
 TOOLKIT="$WORKDIR/Qwen3.8-27B-SGLang-DGX-Spark"
 TARGET_REPO="RadixArk/Qwen3.8-27B-NVFP4"
+TARGET_REV="${TARGET_REV:-554ebba9b5f1b79dc11246341960360e6ef05ef4}"
 DRAFT_REPO="z-lab/Qwen3.8-27B-DFlash2"
-DRAFT_REV="50307d4c4cde6860d4eee73e2547cd786fe8e8a4"
+DRAFT_REV="${DRAFT_REV:-50307d4c4cde6860d4eee73e2547cd786fe8e8a4}"
+# Toolkit commit this recipe was validated against. Its default branch moves.
+TOOLKIT_REV="${TOOLKIT_REV:-c90d8c34cf795185ee8de736b7ded9bca3fe0de1}"
 
 mkdir -p "$WORKDIR"
 
@@ -29,14 +32,22 @@ if [ ! -x "$WORKDIR/venv/bin/hf" ]; then
 fi
 
 echo "== downloading weights (~25GB) =="
-"$WORKDIR/venv/bin/hf" download "$TARGET_REPO"
+# BOTH revisions are pinned. Without --revision on the target you get the repo's
+# mutable default, which may not be the checkpoint these results were measured
+# on. Pass the same revision to the server too (see note at the end).
+"$WORKDIR/venv/bin/hf" download "$TARGET_REPO" --revision "$TARGET_REV"
 "$WORKDIR/venv/bin/hf" download "$DRAFT_REPO" --revision "$DRAFT_REV"
 
 # ---- image -----------------------------------------------------------------
+# Pinned: the toolkit's default branch moves, and its build script selects the
+# base image by tag, so an unpinned clone can produce a different image than the
+# one benchmarked here.
 if [ ! -d "$TOOLKIT/.git" ]; then
-  git clone --depth 1 \
-    https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark.git "$TOOLKIT"
+  git clone https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark.git "$TOOLKIT"
 fi
+git -C "$TOOLKIT" fetch --depth 1 origin "$TOOLKIT_REV" 2>/dev/null || true
+git -C "$TOOLKIT" checkout -q "$TOOLKIT_REV" || {
+  echo "WARNING: could not check out toolkit $TOOLKIT_REV; using $(git -C "$TOOLKIT" rev-parse --short HEAD)" >&2; }
 
 echo
 echo "== building lmsysorg/sglang:qwen38-27b-dflash2 =="
@@ -51,3 +62,22 @@ docker images | grep -E "REPOSITORY|sglang"
 echo
 echo "Next: cd '$TOOLKIT' && cp -n .env.sample .env && \\"
 echo "      DF_EXTRA=\"--mem-fraction-static 0.85\" ./start-dflash.sh"
+
+cat <<NOTE
+
+Pin the target on the server too — downloading the right revision does not make
+SGLang serve it:
+
+    ./start-dflash.sh          # add to EXTRA_ARGS / DF_EXTRA:
+        --revision $TARGET_REV
+
+SparkStation users: models.yaml already carries "--revision" in sglang_flags.
+
+Fully-offline caveat: SGLang's early speculative-algorithm probe resolves the
+draft config WITHOUT a revision, so a cache holding only the pinned draft
+snapshot can still reach for that repo's default ref on first start. Prime the
+cache while online, or expect that one lookup.
+
+Record what actually got built:
+    ./scripts/build-manifest.sh > results/BUILD-MANIFEST.md
+NOTE

@@ -26,13 +26,41 @@ fi
 echo
 echo "== fallback: explicit CDI device =="
 if docker run --rm --device nvidia.com/gpu=all "$IMAGE" nvidia-smi -L; then
-  echo "OK: use --device nvidia.com/gpu=all instead of --gpus all"
+  cat <<'EOF'
+
+OK, but only via CDI: --gpus all does NOT work on this host.
+
+This is not automatically actionable. The toolkit launcher hardcodes
+`--gpus all` (start.sh), and SparkStation's launcher builds its own docker
+arguments, so neither will pick this up. You must apply it yourself:
+
+  standalone toolkit:
+      cd Qwen3.8-27B-SGLang-DGX-Spark
+      sed -i 's/--gpus all/--device nvidia.com\/gpu=all/' start.sh
+
+  sparkstation:
+      edit supervisor/launchers/sglang_launcher.py, replace "--gpus", "all"
+      with "--device", "nvidia.com/gpu=all"
+      then: cp any edited top-level module into .venv/lib/python3.12/site-packages/
+
+Re-run this script after the edit to confirm.
+EOF
   exit 0
 fi
 
-cat <<'EOF'
+cat <<EOF
 
-Both failed. Register the nvidia runtime, then re-run this script:
+Both failed. Check which daemon you are actually talking to first — the active
+Docker context selects the endpoint, and a remote or rootless context will not
+see this host's GPUs:
+
+    docker context show
+    docker context ls
+    https://docs.docker.com/engine/manage-resources/contexts/
+
+  active context: $(docker context show 2>/dev/null || echo "unknown")
+
+If the context is correct, register the nvidia runtime and re-run this script:
 
     sudo nvidia-ctk runtime configure --runtime=docker
     sudo systemctl restart docker
