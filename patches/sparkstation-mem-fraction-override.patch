@@ -1,0 +1,56 @@
+Allow an explicit per-model mem_fraction_static in SparkStation.
+
+The launcher derives mem-fraction from memory_gb and hard-clamps it at 0.82:
+
+    mem_fraction = min(memory_gb / 119.0, 0.82)
+
+so raising memory_gb alone cannot go higher. The clamp's comment records 0.88
+hanging a node "only recoverable by unplugging". That predates the NVFP4
+lm_head fix in the dflash2 image — the dense dequant at draft-graph capture was
+the original reboot cause — and the upstream recipe validates 0.90 on the
+patched image. 0.90 booted clean here.
+
+This adds an `extra_args.mem_fraction_static` override, still bounded at 0.92,
+with `docker_memory_gb` left as the cgroup backstop so the container OOMs
+before the node does. The derived path is unchanged when no override is set.
+
+Worth knowing before you use it: mem-fraction measured as a NULL result for
+throughput here. 0.82 / 0.85 / 0.90 all land within run-to-run noise, because
+concurrency is bound by mamba slots and long context by prefill, not by memory
+capacity. See results/RESULTS.md. The override exists for headroom and for
+co-hosting, not for speed.
+
+Apply from the sparkstation repo root:
+
+    git apply /path/to/sparkstation-mem-fraction-override.patch
+
+Then set it on a model in models.yaml:
+
+    extra_args:
+      mem_fraction_static: 0.85
+
+A full restart is required — the supervisor imports the launcher, so a
+model-only restart will not pick up the change.
+
+--- a/supervisor/launchers/sglang_launcher.py
++++ b/supervisor/launchers/sglang_launcher.py
+@@
+                 # Calculate mem_fraction_static from allocated memory_gb, with a
+                 # SAFETY CLAMP: never exceed 0.82 on unified memory (see the
+                 # wedge note above; 0.88 hung the node, 0.78 booted clean).
+-                if memory_gb is not None:
++                # Explicit per-model override wins over the derived value. The
++                # 0.82 clamp below predates the NVFP4 lm_head fix in the dflash2
++                # image (the dense-dequant at draft-graph capture was what took
++                # nodes down); the upstream recipe validates 0.90 on that image.
++                # Still bounded at 0.92, and docker_memory_gb remains the
++                # cgroup backstop so the container OOMs before the node does.
++                override = config.extra_args.get("mem_fraction_static")
++                if override is not None:
++                    mem_fraction = min(float(override), 0.92)
++                    logger.info(f"Using mem_fraction_static={mem_fraction:.3f} (explicit override, capped ≤0.92)")
++                    docker_cmd.extend(["--mem-fraction-static", str(mem_fraction)])
++                elif memory_gb is not None:
+                     mem_fraction = min(memory_gb / 119.0, 0.82)
+                     logger.info(f"Using mem_fraction_static={mem_fraction:.3f} (from {memory_gb}GB, clamped ≤0.82)")
+                     docker_cmd.extend(["--mem-fraction-static", str(mem_fraction)])

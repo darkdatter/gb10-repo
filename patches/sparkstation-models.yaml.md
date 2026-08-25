@@ -118,3 +118,9 @@ The optima diverge — pick by workload:
 Past 16 it reverses: `accept_len` falls at 20 and 24 despite drafting more, so
 the extra compute produces rejected tokens. Full curve in
 [`../results/RESULTS.md`](../results/RESULTS.md).
+
+## Applying mem_fraction_static
+
+`extra_args.mem_fraction_static` requires
+[`sparkstation-mem-fraction-override.patch`](sparkstation-mem-fraction-override.patch);
+the stock launcher hard-clamps at 0.82 and ignores anything higher.
