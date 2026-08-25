@@ -26,7 +26,7 @@ build inputs behind those numbers are in
 |---|---|
 | Target | `RadixArk/Qwen3.8-27B-NVFP4` @ `554ebba9` |
 | Draft | `z-lab/Qwen3.8-27B-DFlash2` @ `50307d4c` |
-| Image | `lmsysorg/sglang:qwen38-27b-dflash2` — **built locally (step 2)** |
+| Image | `lmsysorg/sglang:dev-cu13-qwen38-27b-dflash2` |
 | Toolkit | [MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark](https://github.com/MiaAI-Lab/Qwen3.8-27B-SGLang-DGX-Spark) @ `c90d8c34` |
 | Disk | ~110 GB |
 
@@ -44,16 +44,16 @@ kernel 6.17-nvidia, driver 580.173.02 / CUDA 13.0, Docker 29.2.1, 128 GB unified
 DGX OS ships CDI, not a registered Docker runtime — `docker info` showing only
 `runc` is normal and `--gpus all` still works.
 
-## 2. Build the image, fetch the weights
+## 2. Pull the image, fetch the weights
 
 ```bash
-./scripts/01-build-and-fetch.sh
+docker pull lmsysorg/sglang:dev-cu13-qwen38-27b-dflash2
+./scripts/01-build-and-fetch.sh    # weights; the build is now optional
 ```
 
-`lmsysorg/sglang:qwen38-27b-dflash2` **is not on Docker Hub.** SparkStation's
-`models.yaml` references it, but no released SGLang tag ships DFlash2 — you
-build it. The build also applies an NVFP4 `lm_head` patch; without it,
-draft-graph capture allocates ~2.5 GB and hard-reboots the machine.
+LMSYS published official DFlash2 images on 2026-08-22: `dev-cu13-qwen38-27b-dflash2`,
+`dev-qwen38-27b-dflash2`, `dev-cu12-qwen38-27b-dflash2`, arm64 included. Only the
+`qwen38-27b-dflash2` tag name is absent. The official image needs no `lm_head` patch.
 
 ## 3. Run standalone, get a baseline
 
@@ -119,9 +119,11 @@ co-limiting** — raising only the obvious one measures nothing.
 | **16** | — | **480.7** |
 | 32 | — | 469.8 |
 
-16 streams is a true optimum, not a plateau: TTFT p50 and max are identical
-there (0.68 s, zero queueing), while 24 and 32 are *slower* in aggregate with
-worst-case TTFT past 10 s.
+16 is the cap, not a hardware optimum. SGLang clamps
+`max_running_requests = max_mamba_cache_size / 5`, so the peak lands wherever the
+pool allows and the 24/32 rows are queueing against it. Pool 160 gives 606.4 tok/s
+at 32 streams, pool 240 gives 640.9 at 48 — but aggregate is bought with KV, so
+those are short-prompt figures.
 
 Leave `--max-total-tokens 1048576` in place: uncapping it grows the KV pool but
 nothing uses the space, and the lost headroom cost 18% at 32 streams.
@@ -193,7 +195,7 @@ Each of these cost real time.
 - **mem-fraction is not a perf lever here.** 0.82 / 0.85 / 0.90 all measure the
   same. Concurrency is bound by mamba slots, long context by prefill — never by
   memory capacity.
-- **The DFlash2 image doesn't exist upstream.** Build it; see step 2.
+- **The DFlash2 image now exists upstream** (`dev-cu13-qwen38-27b-dflash2`).
 - **HF cache symlinks inside the container mount break everything.** The
   container bind-mounts `~/.cache/huggingface`; symlinks *within* it point at
   host-only paths, so it re-downloads and dies with
